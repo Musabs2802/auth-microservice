@@ -1,5 +1,7 @@
 const express = require('express')
 const axios = require('axios')
+const bcrypt = require('bcrypt')
+const jwt = require('jsonwebtoken')
 require('dotenv').config()
 
 const app = express()
@@ -13,23 +15,50 @@ app.get('/', (req, res) => {
 
 app.post('/api/auth/register', async (req, res) => {
     try {
-        console.log(req.body)
         const { name, email, password } = req.body
 
         if (!name || !email || !password) {
             return res.status(422).json({message: "Field(s) missing"})
         }
 
-        dbResponse = await axios.post(`http://localhost:3001/api/auth/register`, {name, email, password})
+        const dbResponse = await axios.post(`${process.env.DB_BASE_URL}/api/auth/register`, { name, email, password })
         if (dbResponse.status == 201) {
-            res.status(201).json({message: 'Item created', _id: dbResponse._id})
+            return res.status(201).json({message: 'Item created', _id: dbResponse._id})
         }
         else {
-            res.status(dbResponse.status).json({message: dbResponse.message})
+            return res.status(dbResponse.status).json({message: dbResponse.data.message})
         }
 
     } catch (error) {
         return res.status(500).json({message: error.message})
     }
 })
+
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const {email, password} = req.body
+
+        if (!email || !password) {
+            return res.status(422).json({message: "Field(s) missing"})
+        }
+
+        const dbUser = await axios.post(`${process.env.DB_BASE_URL}/api/auth/login`, { email, password })
+        if (dbUser.status == 200) {
+                const user = dbUser.data
+                const accessToken = jwt.sign({userId: user._id}, process.env.JWT_ACCESS_TOKEN, {subject:'accessApi', expiresIn: '1h'})
+                return res.status(200).json({ 
+                    id: user._id, 
+                    name: user.name,
+                    email: user.email,
+                    accessToken })
+            }
+        else {
+            return res.status(dbUser.status).json({message: dbUser.data.message})
+        }
+    }
+    catch (error) {
+        return res.status(500).json({message: error.message})
+    }
+})
+
 app.listen(3000, () => console.log('Microservice (auth) started on port 3000'))
