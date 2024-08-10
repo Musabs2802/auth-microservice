@@ -22,7 +22,7 @@ app.post('/api/auth/register', async (req, res) => {
 
         const dbResponse = await axios.post(`${process.env.DB_BASE_URL}/api/auth/register`, { name, email, password, role })
         if (dbResponse.status == 201) {
-            return res.status(201).json({message: 'Item created', _id: dbResponse._id})
+            return res.status(201).json({message: 'Item created', _id: dbResponse.data._id})
         }
         else {
             return res.status(dbResponse.status).json({message: dbResponse.data.message})
