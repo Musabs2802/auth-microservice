@@ -65,4 +65,39 @@ app.post('/api/auth/login', async (req, res) => {
     }
 })
 
+app.get('/api/users/user', authenticate, async (req, res) => {
+    try {
+        const dbUser = await axios.get(`${process.env.DB_BASE_URL}/api/users/user/${req.user.id}`)
+
+        if (dbUser.status == 200) {
+            return res.status(200).json(dbUser.data)
+        }
+        else {
+            return res.status(dbUser.status).json({message: dbUser.data.message})
+        }
+    }
+    catch (error) {
+        return res.status(500).json({message: error})
+    }
+})
+
+async function authenticate(req, res, next) {
+    try {
+        const accessToken = req.headers.authorization.split(' ')[1]
+        
+        if (accessToken) {
+            const decodedToken = jwt.verify(accessToken, process.env.JWT_ACCESS_TOKEN)
+               
+            req.user = { id: decodedToken.userId }
+            next()
+        }
+        else {
+            return res.status(401).json({message: 'Access token not found'})
+        }
+    }
+    catch (error) {
+        return res.status(401).json({ message: 'Access token invalid or expired' })
+    }
+}
+
 app.listen(3000, () => console.log('Microservice (auth) started on port 3000'))
