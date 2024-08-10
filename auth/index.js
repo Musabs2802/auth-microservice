@@ -1,6 +1,5 @@
 const express = require('express')
 const axios = require('axios')
-const bcrypt = require('bcrypt')
 const jwt = require('jsonwebtoken')
 require('dotenv').config()
 
@@ -15,13 +14,13 @@ app.get('/', (req, res) => {
 
 app.post('/api/auth/register', async (req, res) => {
     try {
-        const { name, email, password } = req.body
+        const { name, email, password, role } = req.body
 
         if (!name || !email || !password) {
             return res.status(422).json({message: "Field(s) missing"})
         }
 
-        const dbResponse = await axios.post(`${process.env.DB_BASE_URL}/api/auth/register`, { name, email, password })
+        const dbResponse = await axios.post(`${process.env.DB_BASE_URL}/api/auth/register`, { name, email, password, role })
         if (dbResponse.status == 201) {
             return res.status(201).json({message: 'Item created', _id: dbResponse._id})
         }
@@ -45,11 +44,16 @@ app.post('/api/auth/login', async (req, res) => {
         const dbUser = await axios.post(`${process.env.DB_BASE_URL}/api/auth/login`, { email, password })
         if (dbUser.status == 200) {
                 const user = dbUser.data
-                const accessToken = jwt.sign({userId: user._id}, process.env.JWT_ACCESS_TOKEN, {subject:'accessApi', expiresIn: '1h'})
+                const accessToken = jwt.sign({
+                    userId: user._id}, 
+                    process.env.JWT_ACCESS_TOKEN, 
+                    {subject:'accessApi', expiresIn: '1h'})
+                
                 return res.status(200).json({ 
                     id: user._id, 
                     name: user.name,
                     email: user.email,
+                    role: user.role,
                     accessToken })
             }
         else {

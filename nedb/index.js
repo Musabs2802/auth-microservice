@@ -15,7 +15,7 @@ app.get('/', (req, res) => {
 
 app.post('/api/auth/register', async (req, res) => {
     try {
-        const { name, email, password } = req.body
+        const { name, email, password, role } = req.body
 
         if (!name || !email || !password) {
             return res.status(422).json({message: "Field(s) missing"})
@@ -30,7 +30,8 @@ app.post('/api/auth/register', async (req, res) => {
         const user = await users.insert({
             name, 
             email, 
-            password: hash
+            password: hash,
+            role: role ?? 'member'
         })
 
         return res.status(201).json({message: 'Item created', _id: user._id})
