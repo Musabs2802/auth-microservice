@@ -8,6 +8,7 @@ const app = express()
 app.use(express.json())
 
 const users = datastore.create('./databases/Users.db')
+const userRefreshTokens = datastore.create('./databases/UserRefreshTokens.db')
 
 app.get('/', (req, res) => {
     res.status(200).json({message: "Datastore (nedb) Microservice"})
@@ -69,7 +70,7 @@ app.post('/api/auth/login', async (req, res) => {
     }
 })
 
-app.get('/api/users/findOne/:id', async (req, res) => {
+app.get('/api/users/:id', async (req, res) => {
     try {
         const { id } = req.params
 
@@ -88,6 +89,53 @@ app.get('/api/users/findOne/:id', async (req, res) => {
     }
     catch (error) {
         return res.status(500).json({ message: error.message })
+    }
+})
+
+app.post('/api/UserRefreshToken', async (req, res) => {
+    try {
+        const { userId, refreshToken } = req.body
+
+        if (refreshToken) {
+            await userRefreshTokens.insert({ refreshToken, userId })
+            return res.status(200)
+        }
+        else {
+            return res.status(422).json({message: "Field(s) missing"})
+        }
+    }
+    catch(error) {
+        return res.status(500).json({message: error.message})
+    }
+})
+
+app.get('/api/UserRefreshToken/:refreshToken/:userId', async (req, res) => {
+    try {
+        const { refreshToken, userId } = req.params
+
+        const dbUserRefreshToken = await userRefreshTokens.findOne({ refreshToken, userId })
+        if (dbUserRefreshToken) {
+            return res.status(200).json(dbUserRefreshToken.data)
+        }
+        else {
+            return res.status(404).json({ message: "Item not found" })
+        }
+    }
+    catch (error) {
+        return res.status(500).json({ message: error.message })
+    }
+})
+
+app.delete('/api/UserRefreshToken/:id', async (req, res) => {
+    try {
+        const { id } = req.params
+
+        await userRefreshTokens.remove({ _id: id })
+        await userRefreshTokens.compactDatafile()
+        return res.status(200)
+    }
+    catch (error) {
+        return res.status(404).json({ message: "Item not found" })
     }
 })
 

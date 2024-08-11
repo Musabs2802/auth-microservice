@@ -44,17 +44,24 @@ app.post('/api/auth/login', async (req, res) => {
         const dbUser = await axios.post(`${process.env.DB_BASE_URL}/api/auth/login`, { email, password })
         if (dbUser.status == 200) {
                 const user = dbUser.data
-                const accessToken = jwt.sign({
-                    userId: user._id}, 
+                const accessToken = jwt.sign({ userId: user._id }, 
                     process.env.JWT_ACCESS_TOKEN, 
-                    {subject:'accessApi', expiresIn: '1h'})
+                    { subject:'accessToken', expiresIn: process.env.JWT_ACCESS_TOKEN_EXPIRES_IN })
+
+                const refreshToken = jwt.sign({ userId: user._id },
+                    process.env.JWT_REFRESH_TOKEN,
+                    { subject:'refreshToken', expiresIn: JWT_REFRESH_TOKEN_EXPIRES_IN }
+                )
+
+                await axios.post(`${process.env.DB_BASE_URL}/api/UserRefreshToken`, { refreshToken, userId: user._id })
                 
                 return res.status(200).json({ 
                     id: user._id, 
                     name: user.name,
                     email: user.email,
                     role: user.role,
-                    accessToken })
+                    accessToken,
+                    refreshToken })
             }
         else {
             return res.status(dbUser.status).json({message: dbUser.data.message})
@@ -65,9 +72,54 @@ app.post('/api/auth/login', async (req, res) => {
     }
 })
 
+app.post('/api/auth/refreshLogin', async (req, res) => {
+    try {
+        const { refreshToken } = req.body
+
+        if (refreshToken) {
+            const decodedRefreshToken = jwt.verify(refreshToken, process.env.JWT_REFRESH_TOKEN)
+
+            const dbUserRefreshToken = await axios.get(`${process.env.DB_BASE_URL}/api/UserRefreshToken/${refreshToken}/${decodedRefreshToken.userId}`)
+            if (dbUserRefreshToken) {
+                const userRefreshToken = dbUserRefreshToken.data
+                await axios.delete(`${process.env.DB_BASE_URL}/api/UserRefreshToken/${userRefreshToken._id}`)
+
+                const accessToken = jwt.sign({ userId: decodedRefreshToken.userId }, 
+                    process.env.JWT_ACCESS_TOKEN, 
+                    { subject:'accessToken', expiresIn: process.env.JWT_ACCESS_TOKEN_EXPIRES_IN })
+
+                const newRefreshToken = jwt.sign({ userId: decodedRefreshToken.userId },
+                    process.env.JWT_REFRESH_TOKEN,
+                    { subject:'refreshToken', expiresIn: process.env.JWT_REFRESH_TOKEN_EXPIRES_IN }
+                )
+
+                await axios.post(`${process.env.DB_BASE_URL}/api/UserRefreshToken`, { refreshToken: newRefreshToken, userId: decodedRefreshToken.userId })
+                
+                return res.status(200).json({ 
+                    id: decodedRefreshToken.userId, 
+                    accessToken,
+                    refreshToken: newRefreshToken })
+            }
+            else {
+                return res.status(401).json({ message: "Token invalid/expired" })
+            }
+        }
+        else {
+            res.status(422).json({ message: "Field(s) missing" })
+        }
+    }
+    catch (error) {
+        if (error instanceof jwt.TokenExpiredError || error instanceof jwt.JsonWebTokenError) {
+            return res.status(401).json({ message: "Token invalid/expired" })
+        }
+        else {
+          return res.status(500).json({ message: error.message })
+       }
+    }
+})
 app.get('/api/users/user', authenticate, async (req, res) => {
     try {
-        const dbUser = await axios.get(`${process.env.DB_BASE_URL}/api/users/findOne/${req.user.id}`)
+        const dbUser = await axios.get(`${process.env.DB_BASE_URL}/api/users/${req.user.id}`)
 
         if (dbUser.status == 200) {
             return res.status(200).json(dbUser.data)
@@ -91,7 +143,7 @@ app.get('/api/moderator', authenticate, authorize(['moderator', 'admin']), async
 
 function authorize(roles=[]) {
     return async (req, res, next) => {
-        const user = await axios.get(`${process.env.DB_BASE_URL}/api/users/findOne/${req.user.id}`)
+        const user = await axios.get(`${process.env.DB_BASE_URL}/api/users/${req.user.id}`)
         
         if (user && roles.includes(user.data.role)) {
             next()
@@ -117,7 +169,15 @@ async function authenticate(req, res, next) {
         }
     }
     catch (error) {
-        return res.status(401).json({ message: 'Access token invalid or expired' })
+        if (error instanceof jwt.TokenExpiredError) {
+            return res.status(401).json({ message: 'Access token expired' })
+        }
+        else if (error instanceof jwt.JsonWebTokenError) {
+            return res.status(401).json({ message: 'Access token invalid' })
+        }
+        else {
+            return res.status(500).json({ message: error.message })
+        }
     }
 }
 
