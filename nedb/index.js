@@ -69,7 +69,7 @@ app.post('/api/auth/login', async (req, res) => {
     }
 })
 
-app.get('/api/users/user/:id', async (req, res) => {
+app.get('/api/users/findOne/:id', async (req, res) => {
     try {
         const { id } = req.params
 
@@ -89,7 +89,6 @@ app.get('/api/users/user/:id', async (req, res) => {
     catch (error) {
         return res.status(500).json({ message: error.message })
     }
-
 })
 
 app.listen(3001, () => console.log("Microservice (nedb) started on port 3001"))

@@ -67,7 +67,7 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.get('/api/users/user', authenticate, async (req, res) => {
     try {
-        const dbUser = await axios.get(`${process.env.DB_BASE_URL}/api/users/user/${req.user.id}`)
+        const dbUser = await axios.get(`${process.env.DB_BASE_URL}/api/users/findOne/${req.user.id}`)
 
         if (dbUser.status == 200) {
             return res.status(200).json(dbUser.data)
@@ -80,6 +80,27 @@ app.get('/api/users/user', authenticate, async (req, res) => {
         return res.status(500).json({message: error})
     }
 })
+
+app.get('/api/admin', authenticate, authorize(['admin']), async (req, res) => {
+    return res.status(200).json({ message: "Admin Authorized Endpoints" })
+})
+
+app.get('/api/moderator', authenticate, authorize(['moderator', 'admin']), async (req, res) => {
+    return res.status(200).json({ message: "Admin / Moderator Authorized Endpoints" })
+})
+
+function authorize(roles=[]) {
+    return async (req, res, next) => {
+        const user = await axios.get(`${process.env.DB_BASE_URL}/api/users/findOne/${req.user.id}`)
+        
+        if (user && roles.includes(user.data.role)) {
+            next()
+        }
+        else {
+            return res.status(403).json({message: "Access Denied"}) 
+        }
+    }
+}
 
 async function authenticate(req, res, next) {
     try {
