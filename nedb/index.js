@@ -98,7 +98,7 @@ app.post('/api/UserRefreshToken', async (req, res) => {
 
         if (refreshToken) {
             await userRefreshTokens.insert({ refreshToken, userId })
-            return res.status(200)
+            return res.status(200).send()
         }
         else {
             return res.status(422).json({message: "Field(s) missing"})
@@ -132,7 +132,7 @@ app.delete('/api/UserRefreshToken/:id', async (req, res) => {
 
         await userRefreshTokens.remove({ _id: id })
         await userRefreshTokens.compactDatafile()
-        return res.status(200)
+        return res.status(200).send()
     }
     catch (error) {
         return res.status(500).json({ message: error.message })
@@ -145,7 +145,7 @@ app.post('/api/auth/logout', async (req, res) => {
 
         await userRefreshTokens.removeMany({ userId })
         await userRefreshTokens.compactDatafile()
-        res.status(200)
+        res.status(200).send()
     }
     catch (error) {
         return res.status(500).json({ message: error.message })

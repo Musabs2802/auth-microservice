@@ -50,9 +50,9 @@ app.post('/api/auth/login', async (req, res) => {
 
                 const refreshToken = jwt.sign({ userId: user._id },
                     process.env.JWT_REFRESH_TOKEN,
-                    { subject:'refreshToken', expiresIn: JWT_REFRESH_TOKEN_EXPIRES_IN }
+                    { subject:'refreshToken', expiresIn: process.env.JWT_REFRESH_TOKEN_EXPIRES_IN }
                 )
-
+                
                 await axios.post(`${process.env.DB_BASE_URL}/api/UserRefreshToken`, { refreshToken, userId: user._id })
                 
                 return res.status(200).json({ 
@@ -117,6 +117,18 @@ app.post('/api/auth/refreshLogin', async (req, res) => {
        }
     }
 })
+
+app.post('/api/auth/logout', authenticate, async (req, res) => {
+    try {
+        await axios.post(`${process.env.DB_BASE_URL}/api/auth/logout`, { userId: req.userId })
+
+        return res.status(204)
+    }
+    catch (error) {
+        return res.status(500).json({message: error})
+    }
+})
+
 app.get('/api/users/user', authenticate, async (req, res) => {
     try {
         const dbUser = await axios.get(`${process.env.DB_BASE_URL}/api/users/${req.user.id}`)
@@ -141,16 +153,6 @@ app.get('/api/moderator', authenticate, authorize(['moderator', 'admin']), async
     return res.status(200).json({ message: "Admin / Moderator Authorized Endpoints" })
 })
 
-app.post('/api/auth/logout', authenticate, async (req, res) => {
-    try {
-        await axios.post(`${process.env.DB_BASE_URL}/api/auth/logout`, { userId: req.userId })
-
-        return res.status(204)
-    }
-    catch (error) {
-        return res.status(500).json({message: error})
-    }
-})
 
 function authorize(roles=[]) {
     return async (req, res, next) => {
