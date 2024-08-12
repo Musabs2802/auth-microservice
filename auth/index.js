@@ -141,6 +141,17 @@ app.get('/api/moderator', authenticate, authorize(['moderator', 'admin']), async
     return res.status(200).json({ message: "Admin / Moderator Authorized Endpoints" })
 })
 
+app.post('/api/auth/logout', authenticate, async (req, res) => {
+    try {
+        await axios.post(`${process.env.DB_BASE_URL}/api/auth/logout`, { userId: req.userId })
+
+        return res.status(204)
+    }
+    catch (error) {
+        return res.status(500).json({message: error})
+    }
+})
+
 function authorize(roles=[]) {
     return async (req, res, next) => {
         const user = await axios.get(`${process.env.DB_BASE_URL}/api/users/${req.user.id}`)
@@ -160,7 +171,7 @@ async function authenticate(req, res, next) {
         
         if (accessToken) {
             const decodedToken = jwt.verify(accessToken, process.env.JWT_ACCESS_TOKEN)
-               
+            
             req.user = { id: decodedToken.userId }
             next()
         }

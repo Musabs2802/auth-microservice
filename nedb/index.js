@@ -135,7 +135,20 @@ app.delete('/api/UserRefreshToken/:id', async (req, res) => {
         return res.status(200)
     }
     catch (error) {
-        return res.status(404).json({ message: "Item not found" })
+        return res.status(500).json({ message: error.message })
+    }
+})
+
+app.post('/api/auth/logout', async (req, res) => {
+    try {
+        const { userId } = req.params
+
+        await userRefreshTokens.removeMany({ userId })
+        await userRefreshTokens.compactDatafile()
+        res.status(200)
+    }
+    catch (error) {
+        return res.status(500).json({ message: error.message })
     }
 })
 
