@@ -25,7 +25,9 @@ router.post('/register', async (req, res) => {
             name, 
             email, 
             password: hash,
-            role: role ?? 'member'
+            role: role ?? 'member',
+            '2faEnable': false,
+            '2fsSecret': null 
         })
 
         return res.status(201).json({message: 'Item created', _id: user._id})
@@ -57,6 +59,47 @@ router.post('/login', async (req, res) => {
         else {
             return res.status(401).json({ message: "Unauthorized" })
         }
+    }
+    catch (error) {
+        return res.status(500).json({ message: error.message })
+    }
+})
+
+router.get('/id/:id', async (req, res) => {
+    try {
+        const { id } = req.params
+
+        const user = await users.findOne({ _id: id })
+        if (user) {
+            return (200).json(user)
+        }
+        else {
+            return res.status(401).json({ message: "Unauthorized" })
+        }
+    }
+    catch (error) {
+        return res.status(500).json({ message: error.message })
+    }
+})
+
+router.post('/2fa/generate', async (req, res) => {
+    try {
+        const { userId, secret } = req.params
+
+        await users.update({ _id: userId }, { $set: { '2faSecret': secret }})
+        await users.compactDatafile()
+    }
+    catch (error) {
+        return res.status(500).json({ message: error.message })
+    }
+})
+
+router.post('/2fa/validate', async (req, res) => {
+    try {
+        const { userId } = req.params
+
+        await users.update({ _id: userId }, { $set: { '2faEnables': true }})
+        await users.compactDatafile()
     }
     catch (error) {
         return res.status(500).json({ message: error.message })
