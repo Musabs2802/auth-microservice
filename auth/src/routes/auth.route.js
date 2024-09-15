@@ -2,8 +2,13 @@ const express = require('express')
 const axios = require('axios')
 const jwt = require('jsonwebtoken')
 const authenticate = require('../middlewares/authenticate.middleware')
+const { authenticator } = require('otplib')
+const qrcode = require('qrcode')
+const crypto = require('crypto')
+const NodeCache = require('node-cache')
 
 const router = express.Router()
+const cache = new NodeCache()
 
 router.post('/register', async (req, res) => {
     try {
@@ -37,30 +42,93 @@ router.post('/login', async (req, res) => {
         const dbUser = await axios.post(`${process.env.DB_BASE_URL}/api/auth/login`, { email, password })
         if (dbUser.status == 200) {
                 const user = dbUser.data
-                const accessToken = jwt.sign({ userId: user._id }, 
-                    process.env.JWT_ACCESS_TOKEN, 
-                    { subject:'accessToken', expiresIn: process.env.JWT_ACCESS_TOKEN_EXPIRES_IN })
 
-                const refreshToken = jwt.sign({ userId: user._id },
-                    process.env.JWT_REFRESH_TOKEN,
-                    { subject:'refreshToken', expiresIn: process.env.JWT_REFRESH_TOKEN_EXPIRES_IN }
-                )
-                
-                await axios.post(`${process.env.DB_BASE_URL}/api/userRefreshToken`, { refreshToken, userId: user._id })
-                
-                return res.status(200).json({ 
-                    id: user._id, 
-                    name: user.name,
-                    email: user.email,
-                    role: user.role,
-                    accessToken,
-                    refreshToken })
+                if (user['2faEnabled']) {
+                    const tempToken = crypto.randomUUID()
+                    cache.set(process.env.CACHE_TEMP_TOKEN_PREFIX + tempToken, user._id, process.CACHE_TEMP_EXPIRES_IN_SECONDS)
+                    
+                    return res.status(200).json({ tempToken, expiresInSeconds: process.env.CACHE_TEMP_EXPIRES_IN_SECONDS})
+                }
+                else {
+                    const accessToken = jwt.sign({ userId: user._id }, 
+                        process.env.JWT_ACCESS_TOKEN, 
+                        { subject:'accessToken', expiresIn: process.env.JWT_ACCESS_TOKEN_EXPIRES_IN })
+
+                    const refreshToken = jwt.sign({ userId: user._id },
+                        process.env.JWT_REFRESH_TOKEN,
+                        { subject:'refreshToken', expiresIn: process.env.JWT_REFRESH_TOKEN_EXPIRES_IN }
+                    )
+                    
+                    await axios.post(`${process.env.DB_BASE_URL}/api/userRefreshToken`, { refreshToken, userId: user._id })
+                    
+                    return res.status(200).json({ 
+                        id: user._id, 
+                        name: user.name,
+                        email: user.email,
+                        role: user.role,
+                        accessToken,
+                        refreshToken })
+                }
             }
         else {
             return res.status(dbUser.status).json({message: dbUser.data.message})
         }
     }
     catch (error) {
+        return res.status(500).json({message: error.message})
+    }
+})
+
+router.post('/login/2fa', async (req, res) => {
+    try {
+        const { tempToken, totp } = req.body
+
+        if (tempToken && totp) {
+            const userId = cache.get(process.env.CACHE_TEMP_TOKEN_PREFIX + tempToken)
+
+            if (userId) {
+                const dbUser = await axios.get(`${process.env.DB_BASE_URL}/api/auth/id/${userId}`)
+                if (dbUser.status == 200) {
+                    const user = dbUser.data
+                    const isVerified = authenticator.check(totp, user['2faSecret'])
+
+                    if (isVerified) {
+                        const accessToken = jwt.sign({ userId: user._id }, 
+                            process.env.JWT_ACCESS_TOKEN, 
+                            { subject:'accessToken', expiresIn: process.env.JWT_ACCESS_TOKEN_EXPIRES_IN })
+
+                        const refreshToken = jwt.sign({ userId: user._id },
+                            process.env.JWT_REFRESH_TOKEN,
+                            { subject:'refreshToken', expiresIn: process.env.JWT_REFRESH_TOKEN_EXPIRES_IN }
+                        )
+                        
+                        await axios.post(`${process.env.DB_BASE_URL}/api/userRefreshToken`, { refreshToken, userId: user._id })
+                        
+                        return res.status(200).json({ 
+                            id: user._id, 
+                            name: user.name,
+                            email: user.email,
+                            role: user.role,
+                            accessToken,
+                            refreshToken })
+                    }   
+                    else {
+                        return res.status(401).json({ message: "OTP invalid"})
+                    }
+                }
+                else {
+                    return res.status(dbUser.status).json({message: dbUser.data.message})
+                }
+            }
+            else {
+                return res.status(401).json({ message: "Token invalid"})
+            }
+        }
+        else {
+            return res.status(422).json({ message: 'Field(s) missing'})
+        }
+    }
+    catch(error) {
         return res.status(500).json({message: error.message})
     }
 })
@@ -108,6 +176,64 @@ router.post('/refreshLogin', async (req, res) => {
         else {
           return res.status(500).json({ message: error.message })
        }
+    }
+})
+
+router.get('/2fa/generate', authenticate, async (req, res) => {
+    try {
+        const dbUser = await axios.get(`${process.env.DB_BASE_URL}/api/users/${req.user.id}`)
+
+        if (dbUser.status == 200) {
+            const user = dbUser.data
+            const secret = authenticator.generateSecret()
+            const uri = authenticator.keyuri(user.email, 'CodeHabitat', secret)
+
+            await axios.post(`${process.env.DB_BASE_URL}/api/auth/2fa/generate`, { userId: req.user.id, secret})
+
+            const qr = await qrcode.toBuffer(uri, { type: 'image/png' })
+
+            res.setHeader('Content-Disposition', 'attachment; filename=qrcode.png')
+            return res.status(200).type('image/png').send(qr)
+        }
+        else {
+            return res.status(dbUser.status).json({message: dbUser.data.message})
+        }
+    }
+    catch(error) {
+        return res.status(500).json({ message: error })
+    }
+})
+
+router.post('/2fa/validate', authenticate, async (req, res) => {
+    try {
+        const { totp } = req.body
+
+        if (totp) {
+            const dbUser = await axios.get(`${process.env.DB_BASE_URL}/api/users/${req.user.id}`)
+
+            if (dbUser.status == 200) {
+                const user = dbUser.data
+                const verified = authenticator.check(totp, user['2faSecret'])
+
+                if (verified) {
+                    await axios.post(`${process.env.DB_BASE_URL}/api/auth/2fa/validate`, { userId: req.user.id })
+
+                    return res.status(200).json({ message: 'TOTP validated' })
+                }
+                else {
+                    return res.status(400).json({ message: "TOTP invalid" })
+                }
+            }
+            else {
+                return res.status(dbUser.status).json({message: dbUser.data.message})
+            }
+        }
+        else {
+            return res.status(422).json({ message: 'TOTP required' })
+        }
+    }
+    catch(error) {
+        return res.status(500).json({ message: error })
     }
 })
 
