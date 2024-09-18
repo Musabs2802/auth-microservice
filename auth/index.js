@@ -8,7 +8,6 @@ require('dotenv').config()
 
 const app = express()
 
-// Configure body parser
 app.use(express.json())
 
 app.get('/', (req, res) => {
